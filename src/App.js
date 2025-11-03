@@ -1,12 +1,61 @@
 // In admin-panel/src/App.js
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // <-- ADD useEffect
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import axios from 'axios'; // <-- ADD axios
 import Signup from './components/Signup'; 
 import Login from './components/Login';   
 import Dashboard from './components/Dashboard';
 import RecipeGuide from './components/RecipeGuide';
+import SetAvailability from './components/SetAvailability'; // <-- ADD SetAvailability
 import './App.css';
+
+const API_URL = 'https://odc-api-289803954008.asia-south1.run.app/api'; // <-- ADD API_URL
+
+// --- ADD THIS NEW FUNCTION ---
+const useAuth = () => {
+    const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('access_token'));
+    const [userProfile, setUserProfile] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchProfile = async () => {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                setIsLoading(false);
+                return;
+            }
+            try {
+                const response = await axios.get(`${API_URL}/cooks/me/`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setUserProfile(response.data);
+                setIsLoggedIn(true);
+            } catch (error) {
+                localStorage.removeItem('access_token');
+                setIsLoggedIn(false);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchProfile();
+    }, []);
+
+    const handleLoginSuccess = (profile) => {
+        setUserProfile(profile);
+        setIsLoggedIn(true);
+    };
+
+    const handleLogout = () => {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        setIsLoggedIn(false);
+        setUserProfile(null);
+    };
+
+    return { isLoggedIn, userProfile, isLoading, handleLoginSuccess, handleLogout };
+};
+// ----------------------------
 
 const Portal = () => {
     const navigate = useNavigate();
@@ -25,34 +74,53 @@ const PrivateRoute = ({ children }) => {
     return isLoggedIn ? children : <Navigate to="/login" />;
 };
 
+// --- REPLACE THE OLD App FUNCTION WITH THESE TWO ---
 function App() {
-    const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('access_token'));
-
-    const handleLoginSuccess = () => setIsLoggedIn(true);
-
-    const handleLogout = () => {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        setIsLoggedIn(false);
-    };
-
+    const { isLoggedIn, userProfile, isLoading, handleLoginSuccess, handleLogout } = useAuth();
+    
+    if (isLoading) {
+        return <div className="spinner-dashboard"></div>;
+    }
+    
     return (
-        <BrowserRouter>
-            <div className="container">
-                <div className="form-container">
-                    <Routes>
-                        <Route path="/" element={isLoggedIn ? <Navigate to="/dashboard" /> : <Portal />} />
-                        <Route path="/login" element={!isLoggedIn ? <Login onLoginSuccess={handleLoginSuccess} /> : <Navigate to="/dashboard" />} />
-                        <Route path="/signup" element={!isLoggedIn ? <Signup /> : <Navigate to="/dashboard" />} />
-                        <Route path="/dashboard" element={<PrivateRoute><Dashboard onLogout={handleLogout} /></PrivateRoute>} />
-                        <Route path="/task/:taskId" element={<PrivateRoute><RecipeGuide /></PrivateRoute>} />
-                        <Route path="*" element={<Navigate to="/" />} />
-                    </Routes>
-                </div>
+        <div className="container">
+            <div className="form-container">
+                <Routes>
+                    <Route path="/login" element={!isLoggedIn ? <Login onLoginSuccess={handleLoginSuccess} /> : <Navigate to="/" />} />
+                    <Route path="/signup" element={!isLoggedIn ? <Signup /> : <Navigate to="/" />} />
+                    
+                    <Route
+                        path="/"
+                        element={
+                            isLoggedIn ? (
+                                userProfile?.has_set_availability ? (
+                                    <Navigate to="/dashboard" />
+                                ) : (
+                                    <Navigate to="/set-availability" />
+                                )
+                            ) : (
+                                <Portal />
+                            )
+                        }
+                    />
+
+                    <Route path="/dashboard" element={<PrivateRoute><Dashboard onLogout={handleLogout} /></PrivateRoute>} />
+                    <Route path="/set-availability" element={<PrivateRoute><SetAvailability /></PrivateRoute>} />
+                    <Route path="/task/:taskId" element={<PrivateRoute><RecipeGuide /></PrivateRoute>} />
+                    
+                    <Route path="*" element={<Navigate to="/" />} />
+                </Routes>
             </div>
-        </BrowserRouter>
+        </div>
     );
 }
+
+const AppWrapper = () => (
+    <BrowserRouter>
+        <App />
+    </BrowserRouter>
+);
+// ----------------------------------------------------
 
 // --- ALL YOUR SUNNY STYLES ARE HERE ---
 const styles = `
@@ -102,4 +170,4 @@ const styleSheet = document.createElement("style");
 styleSheet.innerText = styles;
 document.head.appendChild(styleSheet);
 
-export default App;
+export default AppWrapper;
